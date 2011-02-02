@@ -33,6 +33,17 @@
 #include <avr/interrupt.h>
 #include "Charliplexing.h"
 
+#if defined (__AVR_ATmega168__) \
+    || defined (__AVR_ATmega328P__) \
+    || defined (__AVR_ATmega1280__) \
+    || defined (__AVR_ATmega2560__)
+// Ok!
+#else
+#error Sorry, your version of Arduino is not supported! Please let someone know \
+ and maybe we can help you.
+#endif
+
+
 volatile unsigned int LedSign::tcnt2;
 
 /* -----------------------------------------------------------------  */
@@ -116,7 +127,6 @@ void LedSign::Init(uint8_t mode)
 	float prescaler = 0.0;
 
     // Configure the interrupt routine to run at 2kHz
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
 	TIMSK2 &= ~(1<<TOIE2);
 	TCCR2A &= ~((1<<WGM21) | (1<<WGM20));
 	TCCR2B &= ~(1<<WGM22);
@@ -126,30 +136,13 @@ void LedSign::Init(uint8_t mode)
     TCCR2B |= (1<<CS22);
     TCCR2B &= ~((1<<CS21) | (1<<CS20));
     prescaler = 65.0;
-#elif defined (__AVR_ATmega1280__)
-    // TODO: Test this
-	TIMSK1 &= ~(1<<TOIE2);
-	TCCR1A &= ~((1<<WGM21) | (1<<WGM20));
-	TCCR1B &= ~(1<<WGM22);
-	ASSR &= ~(1<<AS2);
-	TIMSK1 &= ~(1<<OCIE2A);
-	
-	TCCR1B |= (1<<CS22);
-	TCCR1B &= ~((1<<CS21) | (1<<CS20));
-	prescaler = 64.0;
-#endif
 	
 	tcnt2 = 256 - (int)((float)F_CPU * 0.0005 / prescaler);
 
     LedSign::SetBrightness(127);
 	
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
 	TCNT2 = tcnt2;
 	TIMSK2 |= (1<<TOIE2);
-#elif defined (__AVR_ATmega1280__)
-	TCNT1 = tcnt2;
-	TIMSK1 |= (1<<TOIE1);
-#endif
 
     // Record whether we are in single or double buffer mode
     displayMode = mode;
@@ -276,11 +269,7 @@ void LedSign::SetBrightness(uint8_t brightness)
 
 #define MIN_ISR_TIME 250
 
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__) 
 ISR(TIMER2_OVF_vect) {
-#elif defined (__AVR_ATmega1280__)
-ISR(TIMER1_OVF_vect) {
-#endif
 
 #ifdef MEASURE_ISR_TIME
     digitalWrite(statusPIN, HIGH);
@@ -299,53 +288,64 @@ ISR(TIMER1_OVF_vect) {
 
     if ( onPhase ) {
         if ( timeOn > MIN_ISR_TIME ) {
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
             TCNT2 = 255 - ((255 - timeOn) + (255 - timeOff));
-#elif defined (__AVR_ATmega1280__)
-            TCNT1 = 255 - ((255 - timeOn) + (255 - timeOff));
-#endif
         }
         else {
-
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
             TCNT2 = timeOn;
-#elif defined (__AVR_ATmega1280__)
-            TCNT1 = timeOn;
-#endif
         }
 
         // 24 Cycles of Matrix
         static uint8_t i = 0;
 
+        static uint8_t pinDirLow;
+        static uint8_t pinDirHigh;
+        static uint8_t pinDataLow;
+        static uint8_t pinDataHigh;
+
+        pinDataLow = displayBuffer[i*2];
+        pinDataHigh = displayBuffer[i*2+1];
+
         if (i < 6) {
-            DDRD  = _BV(i+2) | displayBuffer[i*2];
-            PORTD =            displayBuffer[i*2];
+            pinDirLow = _BV(i+2) | displayBuffer[i*2];
 
-            DDRB  =            displayBuffer[i*2+1];
-            PORTB =            displayBuffer[i*2+1];
+            pinDirHigh =            displayBuffer[i*2+1];
         } else if (i < 12) {
-            DDRD =             displayBuffer[i*2];
-            PORTD =            displayBuffer[i*2];
+            pinDirLow =             displayBuffer[i*2];
 
-            DDRB  = _BV(i-6) | displayBuffer[i*2+1];
-            PORTB =            displayBuffer[i*2+1];      
+            pinDirHigh = _BV(i-6) | displayBuffer[i*2+1];
         } else if (i < 18) {
-            DDRD  = _BV(i+2-12) | displayBuffer[i*2];
-            PORTD =            displayBuffer[i*2];
+            pinDirLow = _BV(i+2-12) | displayBuffer[i*2];
 
-            DDRB  =            displayBuffer[i*2+1];
-            PORTB =            displayBuffer[i*2+1];
+            pinDirHigh =            displayBuffer[i*2+1];
         } else {
-            DDRD =             displayBuffer[i*2];
-            PORTD =            displayBuffer[i*2];
+            pinDirLow =             displayBuffer[i*2];
 
-            DDRB  = _BV(i-6-12) | displayBuffer[i*2+1];
-            PORTB =            displayBuffer[i*2+1];      
-        } 
+            pinDirHigh = _BV(i-6-12) | displayBuffer[i*2+1];
+        }
+
+#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
+    PORTD = pinDataLow;
+    PORTB = pinDataHigh;
+    DDRD = pinDirLow;
+    DDRB = pinDirHigh;
+#else // defined (__AVR_ATmega1280__) || defined (__AVR_ATmega2560__)
+    //port E mappings 
+    DDRE = (DDRE & (~0x38)) | ((pinDirLow << 2) & 0x30) | ((pinDirLow >> 2) & 0x8);
+    PORTE = (PORTE & (~0x38)) | ((pinDataLow << 2) & 0x30) | ((pinDataLow >> 2) & 0x8);	
+    //port G mappings 
+    DDRG = (DDRG & (~0x20)) | ((pinDirLow << 1) & 0x20);
+    PORTG = (PORTG & (~0x20)) | ((pinDataLow << 1) & 0x20);
+    //port H mappings
+    DDRH = (DDRH & (~0x78)) | ((pinDirLow >> 3) & 0x18) | ((pinDirHigh << 5) & 0x60);
+    PORTH = (PORTH & (~0x78)) | ((pinDataLow >> 3) & 0x18) | ((pinDataHigh << 5) & 0x60);
+    //port B mappings
+    DDRB = (DDRB & (~0xf0)) | ((pinDirHigh << 2) & 0xf0);
+    PORTB = (PORTB & (~0xf0)) | ((pinDataHigh << 2) & 0xf0);	
+#endif
 
         i++;
 
-        if (i > 24) {
+        if (i > 23) {
             i = 0;
 
             // If the page should be flipped, do it here.
@@ -376,10 +376,8 @@ ISR(TIMER1_OVF_vect) {
         }
     }
     else {
-#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
+#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__) || defined (__AVR_ATmega1280__) || defined (__AVR_ATmega2560__)
         TCNT2 = timeOff;
-#elif defined (__AVR_ATmega1280__)
-        TCNT1 = timeOff;
 #endif
 
         // Turn everything off
