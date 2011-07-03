@@ -4,7 +4,8 @@
   With the kind help and good ideas of Benjamin Sonntag <benjamin@sonntag.fr> http://benjamin.sonntag.fr/
 
   History:
-  	2010-01-01 - V1.0 Initial version, at Berlin after 26C3 :D
+        2010-01-01 - V1.0 Initial version, at Berlin after 26C3 :D
+        2011-07-03 - Update to work with Arduino v22
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,8 +23,10 @@
   Boston, MA 02111-1307, USA.
 */
 
+
 #include "Charliplexing.h"
 #include "Figure.h"
+#include "LoLShield_Tetris.h"
 
 /** The current level. */
 int level;
@@ -41,38 +44,7 @@ boolean playGrid[GRID_HEIGHT][GRID_WIDTH];
 const uint8_t NUM_LEVEL_STEPS = 4;
 const uint32_t LEVEL_STEPS[NUM_LEVEL_STEPS] = {200,600,1800,5400};
 
-/**
- * The coord struct holds an (x,y) pair, as used in the pieces declarations
- * an in the position structure.
- */
-typedef struct coord {
-  int8_t x;
-  int8_t y;
-} coord_t;
 
-/**
- * One piece view. Each Tetris piece may have one to four views.
- */
-typedef struct pieceView {
-  coord_t elements[4];
-} pieceView_t;
-
-/**
- * One Tetris piece object, made of one to four views.
- */
-typedef struct piece {
-  pieceView_t** views;
-  uint8_t numViews;
-} piece_t;
-
-/**
- * Structure to hold the current position and view of the piece
- * being played.
- */
-typedef struct pos {
-  coord_t coord;
-  uint8_t view;
-} pos_t;
 
 // The single view of the square piece :
 // 00
